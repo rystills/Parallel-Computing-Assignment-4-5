@@ -12,11 +12,19 @@
 #include<string.h>
 #include<errno.h>
 #include<math.h>
-// Local RNG Include for Assignment 3
+
 #include<clcg4.h>
 
 #include<mpi.h>
+#include<pthread.h>
 
+// #define BGQ 1 // when running BG/Q, comment out when testing on mastiff
+
+#ifdef BGQ
+#include<hwi/include/bqc/A2_inlines.h>
+#else
+#define GetTimeBase MPI_Wtime            
+#endif
 
 /***************************************************************************/
 /* Defines *****************************************************************/
@@ -28,6 +36,11 @@
 /***************************************************************************/
 /* Global Vars *************************************************************/
 /***************************************************************************/
+
+double g_time_in_secs = 0;
+double g_processor_frequency = 1600000000.0; // processing speed for BG/Q
+unsigned long long g_start_cycles=0;
+unsigned long long g_end_cycles=0;
 
 // You define these
 
@@ -53,7 +66,7 @@ int main(int argc, char *argv[])
     MPI_Comm_size( MPI_COMM_WORLD, &mpi_commsize);
     MPI_Comm_rank( MPI_COMM_WORLD, &mpi_myrank);
     
-// Init 16,384 RNG streams - each rank has an independent stream
+// Init 32,768 RNG streams - each rank has an independent stream
     InitDefault();
     
 // Note, used the mpi_myrank to select which RNG stream to use.

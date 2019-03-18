@@ -8,7 +8,7 @@
 #define H_CLCG4_H
 /* Maximum number of generators, plus one.  This value can be increased 
    as needed */
-#define Maxgen (16384)
+#define Maxgen (32768)
 
 /* A generator number, in the range 0 to Maxgen */
 typedef unsigned short int Gen;
