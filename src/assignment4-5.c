@@ -18,6 +18,8 @@
 #define GetTimeBase MPI_Wtime
 #define processor_frequency 1.0 // 1.0 for mastiff since Wtime measures seconds, not cycles
 #endif
+#define DEBUG true
+
 #define ALIVE 1
 #define DEAD  0
 
@@ -28,7 +30,7 @@ int rank = -1; // our rank
 #define boardSize 32768 // total # of rows on a square grid
 int numThreads = -1; // how many pthreads to spawn at each rank; passed in as arg1
 int numTicks = -1; // how many ticks of the simulation to perform; passed in as arg2
-bool* boardData[boardSize];
+bool** boardData;
 bool ghostTop[boardSize];
 bool ghostBot[boardSize];
 int rowsPerRank = -1; // how many rows each rank is responsible for
@@ -55,12 +57,14 @@ void *runSimulation(void* threadNum) {
 		for (int k = rowsPerThread*threadId; k < rowsPerThread*(threadId+1); ++k) {
 			for (int r = 0; r < boardSize; ++r) {
 				localLiveCells += boardData[k][r];
+				// TODO: this local sum operation is running more slowly than expected; further consideration should be given
 			}
 		}
 		//grab the counter lock for the increment critical section
 		while (pthread_mutex_trylock(&counterMutex) != 0);
 		liveCellCounts[i]+=localLiveCells;
 		pthread_mutex_unlock(&counterMutex);
+		if (DEBUG && rank == 0 && threadId == 0) printf("%d\n",i);
 
 	}
 	return NULL;
@@ -84,7 +88,9 @@ int main(int argc, char *argv[]) {
 	rowsPerThread = rowsPerRank/numThreads;
 	localRow = rowsPerRank*rank;
 	globalIndex = localRow + rowsPerRank * numRanks;  // algorithm provided by the assignment doc
-	liveCellCounts = malloc(numTicks * sizeof(int));
+	liveCellCounts = calloc(numTicks, sizeof(int));
+
+	if (DEBUG) printf("%d: numRanks: %d, numThreads: %d, rowsPerRank: %d, rowsPerThread: %d\n",rank, numRanks,numThreads, rowsPerRank, rowsPerThread);
 
 	// Init 32,768 RNG streams - each rank has an independent stream
 	InitDefault();
@@ -92,6 +98,7 @@ int main(int argc, char *argv[]) {
 	g_start_cycles = GetTimeBase();
 
 	// allocate local board chunk and initialize universe to ALIVE
+	boardData = malloc(rowsPerRank * sizeof(bool*));
     for (int i = 0; i < rowsPerRank; ++i) {
     	boardData[i] = malloc(boardSize * sizeof(bool));
     	for (int r = 0; r < boardSize; boardData[i][r++] = ALIVE);
@@ -113,8 +120,7 @@ int main(int argc, char *argv[]) {
     threadIds[0] = 0;
     runSimulation(&threadIds[0]);
     // cleanup pthreads
-    for (int i = 0; i < numThreads; pthread_join(threads[i++], NULL));
-
+    for (int i = 1; i < numThreads; pthread_join(threads[i++], NULL));
     // timing and analysis
     double time_in_secs = (GetTimeBase() - g_start_cycles) / processor_frequency;
     printf("rank %d: liveCellCounts[3]=%d, Elapsed time = %fs\n",rank,liveCellCounts[3],time_in_secs);
@@ -125,7 +131,8 @@ int main(int argc, char *argv[]) {
 
     // cleanup dynamic memory
     free(liveCellCounts);
-    for (int i = 0; i < boardSize; free(boardData[i++]));
+    for (int i = 0; i < rowsPerRank; free(boardData[i++]));
+    free(boardData);
 
     return 0;
 }
