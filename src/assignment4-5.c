@@ -40,7 +40,8 @@ int globalIndex; // this row's global index
 // timing/stats
 double g_time_in_secs = 0;
 unsigned long long g_start_cycles=0;
-int* liveCellCounts; //array of ints corresponding to the # of live cells at the end of each simulation tick
+unsigned long long* liveCellCounts; //array of ints corresponding to the # of live cells at the end of each simulation tick
+unsigned long long* totalLiveCellCounts; //live cell counts across all ranks combined
 pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER; // lock used to ensure safe thread counting
 
 /**
@@ -53,14 +54,14 @@ void *runSimulation(void* threadNum) {
 		// TODO: async io
 		// TODO: game of life logic
 		// update live cell count
-		int localLiveCells = 0;
+		unsigned long long localLiveCells = 0;
 		for (int k = rowsPerThread*threadId; k < rowsPerThread*(threadId+1); ++k) {
 			for (int r = 0; r < boardSize; ++r) {
 				localLiveCells += boardData[k][r];
 				// TODO: this local sum operation is running more slowly than expected; further consideration should be given
 			}
 		}
-		//grab the counter lock for the increment critical section
+		// grab the counter lock for the increment critical section
 		while (pthread_mutex_trylock(&counterMutex) != 0);
 		liveCellCounts[i]+=localLiveCells;
 		pthread_mutex_unlock(&counterMutex);
@@ -88,7 +89,8 @@ int main(int argc, char *argv[]) {
 	rowsPerThread = rowsPerRank/numThreads;
 	localRow = rowsPerRank*rank;
 	globalIndex = localRow + rowsPerRank * numRanks;  // algorithm provided by the assignment doc
-	liveCellCounts = calloc(numTicks, sizeof(int));
+	liveCellCounts = calloc(numTicks, sizeof(unsigned long long));
+	if (rank == 0) totalLiveCellCounts = calloc(numTicks, sizeof(unsigned long long));
 
 	if (DEBUG) printf("%d: numRanks: %d, numThreads: %d, rowsPerRank: %d, rowsPerThread: %d\n",rank, numRanks,numThreads, rowsPerRank, rowsPerThread);
 
@@ -116,14 +118,19 @@ int main(int argc, char *argv[]) {
     	threadIds[i] = i;
     	pthread_create(&threads[i], NULL, runSimulation, &threadIds[i]);
     }
+
     // run the simulation on the root process as well, who gets treated as pthread #0
     threadIds[0] = 0;
     runSimulation(&threadIds[0]);
     // cleanup pthreads
     for (int i = 1; i < numThreads; pthread_join(threads[i++], NULL));
+    // sum the live cell counts across all ranks
+    MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+
     // timing and analysis
     double time_in_secs = (GetTimeBase() - g_start_cycles) / processor_frequency;
-    printf("rank %d: liveCellCounts[3]=%d, Elapsed time = %fs\n",rank,liveCellCounts[3],time_in_secs);
+    printf("rank %d: Elapsed time = %fs\n",rank,time_in_secs);
+    if (rank == 0) printf("rank %d: liveCellCounts[3]=%llu\n",rank, totalLiveCellCounts[3]);
 
 	// END -Perform a barrier and then leave MPI
     MPI_Barrier( MPI_COMM_WORLD );
@@ -131,6 +138,7 @@ int main(int argc, char *argv[]) {
 
     // cleanup dynamic memory
     free(liveCellCounts);
+    free(totalLiveCellCounts);
     for (int i = 0; i < rowsPerRank; free(boardData[i++]));
     free(boardData);
 
