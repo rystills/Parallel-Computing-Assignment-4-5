@@ -51,12 +51,24 @@ pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER; // lock used to ensure
  */
 void *runSimulation(void* threadNum) {
 	int threadId = *((int*)threadNum);
+	MPI_Request sReqTop, sReqBot, rReqTop, rReqBot;
+	MPI_Status status;
 	for (int i = 0; i < numTicks; ++i) {
-		//exchange row data
+		//exchange row data with top and bottom neighbors
 		if (threadNum == 0) {
-			//TODO: data exchange
+			//send top
+			MPI_Isend(boardData[rowsPerRank*(rank+1)-1], boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &sReqTop);
+			//send bottom
+			MPI_Isend(boardData[rowsPerRank*rank], boardSize, MPI_C_BOOL, rank==0?numRanks-1:rank-1, 0, MPI_COMM_WORLD, &sReqBot);
+			//receive top
+			MPI_Irecv(ghostTop, boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &rReqTop);
+			//receive bottom
+			MPI_Irecv(ghostBot, boardSize, MPI_C_BOOL, rank==0?numRanks-1:rank-1, 0, MPI_COMM_WORLD, &rReqBot);
+			//make sure we've received the ghost data before proceeding
+			MPI_Wait(&rReqTop, &status);
+			MPI_Wait(&rReqBot, &status);
 		}
-		//sync threads on the fresh tick data
+		//sync threads on the current tick after we've received ghost rows
 		pthread_barrier_wait(&threadBarrier);
 		// TODO: game of life logic
 		// update live cell count
@@ -64,7 +76,6 @@ void *runSimulation(void* threadNum) {
 		for (int k = rowsPerThread*threadId; k < rowsPerThread*(threadId+1); ++k) {
 			for (int r = 0; r < boardSize; ++r) {
 				localLiveCells += boardData[k][r];
-				// TODO: this local sum operation is running more slowly than expected; further consideration should be given
 			}
 		}
 		// grab the counter lock for the increment critical section
