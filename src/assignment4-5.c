@@ -28,7 +28,8 @@ int numRanks = -1; // total number of ranks in the current run
 int rank = -1; // our rank
 // game/board info
 #define boardSize 32768 // total # of rows on a square grid
-int numThreads = -1; // how many pthreads to spawn at each rank; passed in as arg1
+int numThreads = -1; // total number of threads at each rank (including the rank itself, meaning we spawn numThreads-1 pthreads); passed in as arg1
+pthread_barrier_t threadBarrier;
 int numTicks = -1; // how many ticks of the simulation to perform; passed in as arg2
 bool** boardData;
 bool ghostTop[boardSize];
@@ -51,7 +52,12 @@ pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER; // lock used to ensure
 void *runSimulation(void* threadNum) {
 	int threadId = *((int*)threadNum);
 	for (int i = 0; i < numTicks; ++i) {
-		// TODO: async io
+		//exchange row data
+		if (threadNum == 0) {
+			//TODO: data exchange
+		}
+		//sync threads on the fresh tick data
+		pthread_barrier_wait(&threadBarrier);
 		// TODO: game of life logic
 		// update live cell count
 		unsigned long long localLiveCells = 0;
@@ -68,6 +74,7 @@ void *runSimulation(void* threadNum) {
 		if (DEBUG && rank == 0 && threadId == 0) printf("%d\n",i);
 
 	}
+	//all done with thread barriers
 	return NULL;
 }
 
@@ -80,6 +87,9 @@ int main(int argc, char *argv[]) {
 	}
 	numThreads = atoi(argv[1]);
 	numTicks = atoi(argv[2]);
+
+	//use a pthread barrier to ensure threads don't tick on stale data
+	pthread_barrier_init(&threadBarrier, NULL, numThreads);
 
 	// init MPI + get size & rank, then calculate board data
 	MPI_Init(&argc, &argv);
@@ -122,15 +132,16 @@ int main(int argc, char *argv[]) {
     // run the simulation on the root process as well, who gets treated as pthread #0
     threadIds[0] = 0;
     runSimulation(&threadIds[0]);
-    // cleanup pthreads
+    // cleanup pthreads and thread barrier
     for (int i = 1; i < numThreads; pthread_join(threads[i++], NULL));
+    pthread_barrier_destroy(&threadBarrier);
     // sum the live cell counts across all ranks
     MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
 
     // timing and analysis
     double time_in_secs = (GetTimeBase() - g_start_cycles) / processor_frequency;
     printf("rank %d: Elapsed time = %fs\n",rank,time_in_secs);
-    if (rank == 0) printf("rank %d: liveCellCounts[3]=%llu\n",rank, totalLiveCellCounts[3]);
+    if (rank == 0) printf("rank %d: totalLiveCellCounts[3]=%llu\n",rank, totalLiveCellCounts[3]);
 
 	// END -Perform a barrier and then leave MPI
     MPI_Barrier( MPI_COMM_WORLD );
