@@ -45,10 +45,26 @@ unsigned long long* liveCellCounts; //array of ints corresponding to the # of li
 unsigned long long* totalLiveCellCounts; //live cell counts across all ranks combined
 pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER; // lock used to ensure safe thread counting
 
+
+//Utility function that counts how many neighbors a cell has
+int countNeighbors(int x, int y){
+
+	int n = 0;
+
+	for(int i=-1; i<=1; ++i){
+		for(int j=1; j<=1; ++j){
+			if(i!=0 || j!=0) n += ( ( (y+j==-1) ? ghostBottom : ((y+j==rowsPerThread) ? ghostTop : boardData[y]) )[x] == ALIVE )
+		}
+	}
+
+	return n;
+}
+
 /**
  * run the simulation for numTicks steps. Called by each thread on each rank.
  * @param threadNum: an int containing the calling thread's index on its local rank
  */
+
 void *runSimulation(void* threadNum) {
 	int threadId = *((int*)threadNum);
 	MPI_Request sReqTop, sReqBot, rReqTop, rReqBot;
@@ -70,7 +86,20 @@ void *runSimulation(void* threadNum) {
 		}
 		//sync threads on the current tick after we've received ghost rows
 		pthread_barrier_wait(&threadBarrier);
-		// TODO: game of life logic
+
+		for (int y = 0; y < rowsPerThread) {
+			for (int x = 0; x < boardSize; ++x) {
+				double random = rng();
+				if (random < THRESHOLD/2.0) boardData[y][x] = DEAD;
+				else if (random < THRESHOLD) boardData[y][x] = ALIVE;
+				else {
+					int neighbors = countNeighbors(x, y);
+					if(neighbors == 3) boardData[y][x] = ALIVE;
+					else if(neighbors != 2) boardData[y][x] = DEAD;
+				}
+			}
+		}
+
 		// update live cell count
 		unsigned long long localLiveCells = 0;
 		for (int k = rowsPerThread*threadId; k < rowsPerThread*(threadId+1); ++k) {
