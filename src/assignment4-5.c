@@ -52,8 +52,9 @@ int countNeighbors(int x, int y){
 	int n = 0;
 
 	for(int i=-1; i<=1; ++i){
-		for(int j=1; j<=1; ++j){
-			if(i!=0 || j!=0) n += ( ( (y+j==-1) ? ghostBottom : ((y+j==rowsPerThread) ? ghostTop : boardData[y]) )[x] == ALIVE )
+		for(int j=-1; j<=1; ++j){
+			// Count the cells in the 3x3 area centered on (x,y) that are alive, but skip (x,y). If y would be out of bounds, use the ghost rows.
+			if(i!=0 || j!=0) n += ( ( (y+j==-1) ? ghostBottom : ((y+j==rowsPerThread) ? ghostTop : boardData[y+j]) )[x+i] == ALIVE )
 		}
 	}
 
