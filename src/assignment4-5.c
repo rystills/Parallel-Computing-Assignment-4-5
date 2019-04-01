@@ -46,12 +46,6 @@ unsigned long long* liveCellCounts; //array of ints corresponding to the # of li
 unsigned long long* totalLiveCellCounts; //live cell counts across all ranks combined
 pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER; // lock used to ensure safe thread counting
 
-// Generate a random number
-float rng(){
-	return 4.0; // Chosen by fair dice roll.
-				// Guaranteed to be random.	
-}
-
 //Utility function that counts how many neighbors a cell has
 int countNeighbors(int x, int y){
 
@@ -97,7 +91,7 @@ void *runSimulation(void* threadNum) {
 
 		for (int y = 0; y < rowsPerThread; ++y) {
 			for (int x = 0; x < boardSize; ++x) {
-				double random = rng();
+				double random = GenVal(rakn);
 				if (random < threshold/2.0) boardData[y][x] = DEAD;
 				else if (random < threshold) boardData[y][x] = ALIVE;
 				else {
