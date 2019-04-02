@@ -27,7 +27,7 @@
 int numRanks = -1; // total number of ranks in the current run
 int rank = -1; // our rank
 // game/board info
-double threshold; // probability that cells will randomize
+int threshold; // probability that cells will randomize
 #define boardSize 32768 // total # of rows on a square grid
 int numThreads = -1; // total number of threads at each rank (including the rank itself, meaning we spawn numThreads-1 pthreads); passed in as arg1
 pthread_barrier_t threadBarrier;
@@ -48,9 +48,7 @@ pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER; // lock used to ensure
 
 //Utility function that counts how many neighbors a cell has
 int countNeighbors(int x, int y){
-
 	int n = 0;
-
 	for(int i=-1; i<=1; ++i){
 		for(int j=-1; j<=1; ++j){
 			// Count the cells in the 3x3 area centered on (x,y) that are alive, but skip (x,y). If y would be out of bounds, use the ghost rows.
@@ -58,7 +56,6 @@ int countNeighbors(int x, int y){
 			if(i!=0 || j!=0) n += ( ( (y+j==-1) ? ghostBot : ((y+j==rowsPerThread) ? ghostTop : boardData[y+j]) )[(boardSize+x+i)%boardSize] == ALIVE );
 		}
 	}
-
 	return n;
 }
 
@@ -88,24 +85,19 @@ void *runSimulation(void* threadNum) {
 		}
 		//sync threads on the current tick after we've received ghost rows
 		pthread_barrier_wait(&threadBarrier);
-
-		for (int y = 0; y < rowsPerThread; ++y) {
-			for (int x = 0; x < boardSize; ++x) {
-				double random = GenVal(rakn);
-				if (random < threshold/2.0) boardData[y][x] = DEAD;
-				else if (random < threshold) boardData[y][x] = ALIVE;
-				else {
-					int neighbors = countNeighbors(x, y);
-					if(neighbors == 3) boardData[y][x] = ALIVE;
-					else if(neighbors != 2) boardData[y][x] = DEAD;
-				}
-			}
-		}
-
-		// update live cell count
+		// update grid
 		unsigned long long localLiveCells = 0;
 		for (int k = rowsPerThread*threadId; k < rowsPerThread*(threadId+1); ++k) {
 			for (int r = 0; r < boardSize; ++r) {
+				// consult rng and count neighbors to determine cell state
+				double random = GenVal(rank)*100;  // shift rng range from 0-1 to 0-100
+				// when we don't reach the random threshold, treat >= threshold/2 as false, and < threshold/2 as true
+				if (random < threshold) boardData[k][r] = random < (threshold>>2);
+				else {
+					int neighbors = countNeighbors(k, r);
+					boardData[k][k] = neighbors == 3 || neighbors == 2;
+				}
+				//keep track of local live cells
 				localLiveCells += boardData[k][r];
 			}
 		}
