@@ -53,10 +53,25 @@ int countNeighbors(int x, int y){
 		for(int j=-1; j<=1; ++j){
 			// Count the cells in the 3x3 area centered on (x,y) that are alive, but skip (x,y). If y would be out of bounds, use the ghost rows.
 			// To prevent x from going out of bounds, make it wrap around, so that -1 becomes boardSize - 1.
-			if(i!=0 || j!=0) n += ( ( (y+j==-1) ? ghostBot : ((y+j==rowsPerThread) ? ghostTop : boardData[y+j]) )[(boardSize+x+i)%boardSize] == ALIVE );
+			if(i!=0 || j!=0) n += ( ( (y+j==-1) ? ghostBot : ((y+j==rowsPerRank) ? ghostTop : boardData[y+j]) )[(boardSize+x+i)%boardSize] == ALIVE );
 		}
 	}
 	return n;
+}
+
+/**
+ * return the number of live neighbors of the cell at the specified row/col, wrapping around at the edges of the board
+ * @param row: the row at which the desired cell resides
+ * @param col: the column at which the desired cell resides
+ * @return: the live neighbor count at the specified cell
+ */
+int countNeighbors2(int row, int col) {
+	//by storing pointers to the top and bottom rows and the left and right column positions up-front, this routine should be very efficient
+	bool* topRow = row == rowsPerRank-1 ? ghostTop : boardData[row+1];
+	bool* botRow = row == 0 ? ghostBot : boardData[row-1];
+	int leftCol = col == 0 ? boardSize-1 : col-1;
+	int rightCol = col == boardSize-1 ? 0 : col+1;
+	return topRow[leftCol] + topRow[col] + topRow[rightCol] + boardData[row][leftCol] + boardData[row][rightCol] + botRow[leftCol] + botRow[col] + botRow[rightCol];
 }
 
 /**
@@ -94,8 +109,8 @@ void *runSimulation(void* threadNum) {
 				// when we don't reach the random threshold, treat >= threshold/2 as false, and < threshold/2 as true
 				if (random < threshold) boardData[k][r] = random < (threshold>>2);
 				else {
-					int neighbors = countNeighbors(k, r);
-					boardData[k][k] = neighbors == 3 || neighbors == 2;
+					int neighbors = countNeighbors2(k,r);
+					boardData[k][r] = neighbors == 3 || (neighbors == 2 && boardData[k][r] == ALIVE);
 				}
 				//keep track of local live cells
 				localLiveCells += boardData[k][r];
@@ -176,7 +191,7 @@ int main(int argc, char *argv[]) {
     // timing and analysis
     double time_in_secs = (GetTimeBase() - g_start_cycles) / processor_frequency;
     printf("rank %d: Elapsed time = %fs\n",rank,time_in_secs);
-    if (rank == 0) printf("rank %d: totalLiveCellCounts[3]=%llu\n",rank, totalLiveCellCounts[3]);
+    if (rank == 0) printf("rank %d: totalLiveCellCounts[0]=%llu\n",rank, totalLiveCellCounts[0]);
 
 	// END -Perform a barrier and then leave MPI
     MPI_Barrier( MPI_COMM_WORLD );
