@@ -19,6 +19,7 @@
 #define processor_frequency 1.0 // 1.0 for mastiff since Wtime measures seconds, not cycles
 #endif
 #define DEBUG false
+#define BOARDTESTING true
 
 #define ALIVE 1
 #define DEAD  0
@@ -28,7 +29,7 @@ int numRanks = -1; // total number of ranks in the current run
 int rank = -1; // our rank
 // game/board info
 int threshold; // probability that cells will randomize
-#define boardSize 32768 // total # of rows on a square grid
+#define boardSize 32 // total # of rows on a square grid
 int numThreads = -1; // total number of threads at each rank (including the rank itself, meaning we spawn numThreads-1 pthreads); passed in as arg1
 pthread_barrier_t threadBarrier;
 int numTicks = -1; // how many ticks of the simulation to perform; passed in as arg2
@@ -75,6 +76,19 @@ int countNeighbors2(int row, int col) {
 }
 
 /**
+ * display the board state for debugging purposes
+ */
+void printBoard() {
+	for (int k = 0; k<rowsPerRank; ++k) {
+		for (int r = 0; r < boardSize; ++r) {
+		printf(boardData[k][r]?"x":"_");
+		}
+		printf("\n");
+	}
+	printf("\n");
+}
+
+/**
  * run the simulation for numTicks steps. Called by each thread on each rank.
  * @param threadNum: an int containing the calling thread's index on its local rank
  */
@@ -83,13 +97,14 @@ void *runSimulation(void* threadNum) {
 	int threadId = *((int*)threadNum);
 	MPI_Request sReqTop, sReqBot, rReqTop, rReqBot;
 	MPI_Status status;
+	if (BOARDTESTING && threadId == 0) printBoard();
 	for (int i = 0; i < numTicks; ++i) {
 		//exchange row data with top and bottom neighbors
 		if (threadNum == 0) {
 			//send top
-			MPI_Isend(boardData[rowsPerRank*(rank+1)-1], boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &sReqTop);
+			MPI_Isend(boardData[rowsPerRank-1], boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &sReqTop);
 			//send bottom
-			MPI_Isend(boardData[rowsPerRank*rank], boardSize, MPI_C_BOOL, rank==0?numRanks-1:rank-1, 0, MPI_COMM_WORLD, &sReqBot);
+			MPI_Isend(boardData[0], boardSize, MPI_C_BOOL, rank==0?numRanks-1:rank-1, 0, MPI_COMM_WORLD, &sReqBot);
 			//receive top
 			MPI_Irecv(ghostTop, boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &rReqTop);
 			//receive bottom
@@ -121,6 +136,7 @@ void *runSimulation(void* threadNum) {
 		liveCellCounts[i]+=localLiveCells;
 		pthread_mutex_unlock(&counterMutex);
 		if (DEBUG && rank == 0 && threadId == 0) printf("%d\n",i);
+		if (BOARDTESTING && threadId == 0) printBoard();
 
 	}
 	//all done with thread barriers
