@@ -18,7 +18,7 @@
 #define GetTimeBase MPI_Wtime
 #define processor_frequency 1.0 // 1.0 for mastiff since Wtime measures seconds, not cycles
 #endif
-#define DEBUG true
+#define DEBUG false
 
 #define ALIVE 1
 #define DEAD  0
@@ -42,8 +42,8 @@ int globalIndex; // this row's global index
 // timing/stats
 double g_time_in_secs = 0;
 unsigned long long g_start_cycles=0;
-unsigned long long* liveCellCounts; //array of ints corresponding to the # of live cells at the end of each simulation tick
-unsigned long long* totalLiveCellCounts; //live cell counts across all ranks combined
+unsigned int* liveCellCounts; //array of ints corresponding to the # of live cells at the end of each simulation tick
+unsigned int* totalLiveCellCounts; //live cell counts across all ranks combined
 pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER; // lock used to ensure safe thread counting
 
 //Utility function that counts how many neighbors a cell has
@@ -101,7 +101,7 @@ void *runSimulation(void* threadNum) {
 		//sync threads on the current tick after we've received ghost rows
 		pthread_barrier_wait(&threadBarrier);
 		// update grid
-		unsigned long long localLiveCells = 0;
+		unsigned int localLiveCells = 0;
 		for (int k = rowsPerThread*threadId; k < rowsPerThread*(threadId+1); ++k) {
 			for (int r = 0; r < boardSize; ++r) {
 				// consult rng and count neighbors to determine cell state
@@ -149,8 +149,8 @@ int main(int argc, char *argv[]) {
 	rowsPerThread = rowsPerRank/numThreads;
 	localRow = rowsPerRank*rank;
 	globalIndex = localRow + rowsPerRank * numRanks;  // algorithm provided by the assignment doc
-	liveCellCounts = calloc(numTicks, sizeof(unsigned long long));
-	if (rank == 0) totalLiveCellCounts = calloc(numTicks, sizeof(unsigned long long));
+	liveCellCounts = calloc(numTicks, sizeof(unsigned int));
+	if (rank == 0) totalLiveCellCounts = calloc(numTicks, sizeof(unsigned int));
 
 	if (DEBUG) printf("%d: numRanks: %d, numThreads: %d, rowsPerRank: %d, rowsPerThread: %d\n",rank, numRanks,numThreads, rowsPerRank, rowsPerThread);
 
@@ -190,8 +190,8 @@ int main(int argc, char *argv[]) {
 
     // timing and analysis
     double time_in_secs = (GetTimeBase() - g_start_cycles) / processor_frequency;
-    printf("rank %d: Elapsed time = %fs\n",rank,time_in_secs);
-    if (rank == 0) printf("rank %d: totalLiveCellCounts[0]=%llu\n",rank, totalLiveCellCounts[0]);
+    if (DEBUG || rank == 0) printf("rank %d: Elapsed time = %fs\n",rank,time_in_secs);
+    if (rank == 0) printf("rank %d: totalLiveCellCounts[0]=%d\n",rank, totalLiveCellCounts[0]);
 
 	// END -Perform a barrier and then leave MPI
     MPI_Barrier( MPI_COMM_WORLD );
