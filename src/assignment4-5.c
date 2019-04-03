@@ -34,8 +34,8 @@ int numThreads = -1; // total number of threads at each rank (including the rank
 pthread_barrier_t threadBarrier;
 int numTicks = -1; // how many ticks of the simulation to perform; passed in as arg2
 bool** boardData;
-bool ghostTop[boardSize];
-bool ghostBot[boardSize];
+bool* ghostTop;
+bool* ghostBot;
 int rowsPerRank = -1; // how many rows each rank is responsible for
 int rowsPerThread = -1; // how many rows each thread is responsible for
 int globalIndex; // this row's global index
@@ -67,8 +67,8 @@ int countNeighbors(int x, int y){
  */
 int countNeighbors2(int row, int col) {
 	//by storing pointers to the top and bottom rows and the left and right column positions up-front, this routine should be very efficient
-	bool* topRow = row == rowsPerRank-1 ? ghostTop : boardData[row+1];
-	bool* botRow = row == 0 ? ghostBot : boardData[row-1];
+	bool* botRow = row == rowsPerRank-1 ? ghostBot : boardData[row+1];
+	bool* topRow = row == 0 ? ghostTop : boardData[row-1];
 	int leftCol = col == 0 ? boardSize-1 : col-1;
 	int rightCol = col == boardSize-1 ? 0 : col+1;
 	//     topLeft         + topCenter   + topRight         + centerLeft              + centerRight              + bottomLeft      + bottomCenter+ bottomRight
@@ -100,15 +100,15 @@ void *runSimulation(void* threadNum) {
 	if (BOARDTESTING && threadId == 0) printBoard();
 	for (int i = 0; i < numTicks; ++i) {
 		//exchange row data with top and bottom neighbors
-		if (threadNum == 0) {
+		if (numRanks > 1 && threadNum == 0) {
 			//send top
 			MPI_Isend(boardData[rowsPerRank-1], boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &sReqTop);
 			//send bottom
 			MPI_Isend(boardData[0], boardSize, MPI_C_BOOL, rank==0?numRanks-1:rank-1, 0, MPI_COMM_WORLD, &sReqBot);
 			//receive top
-			MPI_Irecv(ghostTop, boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &rReqTop);
+			MPI_Irecv(ghostBot, boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &rReqTop);
 			//receive bottom
-			MPI_Irecv(ghostBot, boardSize, MPI_C_BOOL, rank==0?numRanks-1:rank-1, 0, MPI_COMM_WORLD, &rReqBot);
+			MPI_Irecv(ghostTop, boardSize, MPI_C_BOOL, rank==0?numRanks-1:rank-1, 0, MPI_COMM_WORLD, &rReqBot);
 			//make sure we've received the ghost data before proceeding
 			MPI_Wait(&rReqTop, &status);
 			MPI_Wait(&rReqBot, &status);
@@ -168,7 +168,7 @@ int main(int argc, char *argv[]) {
 	liveCellCounts = calloc(numTicks, sizeof(unsigned int));
 	if (rank == 0) totalLiveCellCounts = calloc(numTicks, sizeof(unsigned int));
 
-	if (DEBUG || rank == 0) printf("%d: numRanks: %d, numThreads: %d, rowsPerRank: %d, rowsPerThread: %d\n",rank, numRanks,numThreads, rowsPerRank, rowsPerThread);
+	if (DEBUG || rank == 0) printf("%d: numRanks: %d, numThreads: %d, rowsPerRank: %d, rowsPerThread: %d numTicks: %d\n",rank, numRanks,numThreads, rowsPerRank, rowsPerThread, numTicks);
 
 	// Init 32,768 RNG streams - each rank has an independent stream
 	InitDefault();
@@ -182,9 +182,18 @@ int main(int argc, char *argv[]) {
     	for (int r = 0; r < boardSize; boardData[i][r++] = ALIVE);
     }
     // init ghost rows
-    for (int i = 0; i < boardSize; ++i) {
-    	ghostTop[i] = ALIVE;
-    	ghostBot[i] = ALIVE;
+    if (numRanks == 1) {
+    	//if we are performing a single rank run, the ghost rows just wrap around normally
+    	ghostBot = boardData[0];
+    	ghostTop = boardData[rowsPerRank-1];
+    }
+    else {
+    	ghostTop = malloc(rowsPerRank * sizeof(bool*));
+    	ghostBot = malloc(rowsPerRank * sizeof(bool*));
+		for (int i = 0; i < boardSize; ++i) {
+			ghostTop[i] = ALIVE;
+			ghostBot[i] = ALIVE;
+		}
     }
 
     // construct pthreads to run the main simulation
@@ -218,6 +227,10 @@ int main(int argc, char *argv[]) {
     free(totalLiveCellCounts);
     for (int i = 0; i < rowsPerRank; free(boardData[i++]));
     free(boardData);
+    if (numRanks > 1) {
+    	free(ghostTop);
+    	free(ghostBot);
+    }
 
     return 0;
 }
