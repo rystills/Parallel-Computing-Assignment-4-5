@@ -79,13 +79,15 @@ int countNeighbors2(int row, int col) {
  * display the board state for debugging purposes
  */
 void printBoard() {
+	for (int i = 0; i < 10000000*rank; rand(), ++i); //busyloop for output timing
 	for (int k = 0; k<rowsPerRank; ++k) {
 		for (int r = 0; r < boardSize; ++r) {
 		printf(boardData[k][r]?"x":"_");
 		}
 		printf("\n");
 	}
-	printf("\n");
+	if (rank == numRanks-1) printf("\n");
+	fflush(stdout);
 }
 
 /**
@@ -100,7 +102,7 @@ void *runSimulation(void* threadNum) {
 	if (BOARDTESTING && threadId == 0) printBoard();
 	for (int i = 0; i < numTicks; ++i) {
 		//exchange row data with top and bottom neighbors
-		if (numRanks > 1 && threadNum == 0) {
+		if (numRanks > 1 && threadId == 0) {
 			//send top
 			MPI_Isend(boardData[rowsPerRank-1], boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &sReqTop);
 			//send bottom
@@ -211,7 +213,9 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < numThreads; pthread_join(threads[i++], NULL));
     pthread_barrier_destroy(&threadBarrier);
     // sum the live cell counts across all ranks
-    MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    if (numRanks > 1) {
+    	MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    }
 
     // timing and analysis
     double time_in_secs = (GetTimeBase() - g_start_cycles) / processor_frequency;
