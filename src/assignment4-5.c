@@ -37,7 +37,6 @@ bool ghostTop[boardSize];
 bool ghostBot[boardSize];
 int rowsPerRank = -1; // how many rows each rank is responsible for
 int rowsPerThread = -1; // how many rows each thread is responsible for
-int localRow = -1; // which row this rank is responsible for
 int globalIndex; // this row's global index
 // timing/stats
 double g_time_in_secs = 0;
@@ -71,6 +70,7 @@ int countNeighbors2(int row, int col) {
 	bool* botRow = row == 0 ? ghostBot : boardData[row-1];
 	int leftCol = col == 0 ? boardSize-1 : col-1;
 	int rightCol = col == boardSize-1 ? 0 : col+1;
+	//     topLeft         + topCenter   + topRight         + centerLeft              + centerRight              + bottomLeft      + bottomCenter+ bottomRight
 	return topRow[leftCol] + topRow[col] + topRow[rightCol] + boardData[row][leftCol] + boardData[row][rightCol] + botRow[leftCol] + botRow[col] + botRow[rightCol];
 }
 
@@ -105,7 +105,7 @@ void *runSimulation(void* threadNum) {
 		for (int k = rowsPerThread*threadId; k < rowsPerThread*(threadId+1); ++k) {
 			for (int r = 0; r < boardSize; ++r) {
 				// consult rng and count neighbors to determine cell state
-				double random = GenVal(rank)*100;  // shift rng range from 0-1 to 0-100
+				double random = GenVal(k+globalIndex)*100;  // shift rng range from 0-1 to 0-100
 				// when we don't reach the random threshold, treat >= threshold/2 as false, and < threshold/2 as true
 				if (random < threshold) boardData[k][r] = random < (threshold>>2);
 				else {
@@ -134,6 +134,7 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr,"Error: %d input argument[s] were supplied, but 3 were expected. Usage: mpirun -np X ./a.o numThreadsPerRank numTicks threshold\n",argc-1);
 		exit(1);
 	}
+	//grab run parameters from cmd args
 	numThreads = atoi(argv[1]);
 	numTicks = atoi(argv[2]);
 	threshold = atof(argv[3]);
@@ -147,12 +148,11 @@ int main(int argc, char *argv[]) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	rowsPerRank = boardSize/numRanks;
 	rowsPerThread = rowsPerRank/numThreads;
-	localRow = rowsPerRank*rank;
-	globalIndex = localRow + rowsPerRank * numRanks;  // algorithm provided by the assignment doc
+	globalIndex = rowsPerRank * rank;  // algorithm provided by the assignment doc
 	liveCellCounts = calloc(numTicks, sizeof(unsigned int));
 	if (rank == 0) totalLiveCellCounts = calloc(numTicks, sizeof(unsigned int));
 
-	if (DEBUG) printf("%d: numRanks: %d, numThreads: %d, rowsPerRank: %d, rowsPerThread: %d\n",rank, numRanks,numThreads, rowsPerRank, rowsPerThread);
+	if (DEBUG || rank == 0) printf("%d: numRanks: %d, numThreads: %d, rowsPerRank: %d, rowsPerThread: %d\n",rank, numRanks,numThreads, rowsPerRank, rowsPerThread);
 
 	// Init 32,768 RNG streams - each rank has an independent stream
 	InitDefault();
