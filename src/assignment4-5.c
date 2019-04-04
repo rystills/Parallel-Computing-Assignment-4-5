@@ -34,6 +34,7 @@ int numThreads = -1; // total number of threads at each rank (including the rank
 pthread_barrier_t threadBarrier;
 int numTicks = -1; // how many ticks of the simulation to perform; passed in as arg2
 bool** boardData;
+int** heatmap;
 bool* ghostTop;
 bool* ghostBot;
 int rowsPerRank = -1; // how many rows each rank is responsible for
@@ -46,7 +47,7 @@ unsigned int* liveCellCounts; //array of ints corresponding to the # of live cel
 unsigned int* totalLiveCellCounts; //live cell counts across all ranks combined
 pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER; // lock used to ensure safe thread counting
 
-//Utility function that counts how many neighbors a cell has
+/*
 int countNeighbors(int x, int y){
 	int n = 0;
 	for(int i=-1; i<=1; ++i){
@@ -58,6 +59,7 @@ int countNeighbors(int x, int y){
 	}
 	return n;
 }
+*/
 
 /**
  * return the number of live neighbors of the cell at the specified row/col, wrapping around at the edges of the board
@@ -65,21 +67,29 @@ int countNeighbors(int x, int y){
  * @param col: the column at which the desired cell resides
  * @return: the live neighbor count at the specified cell
  */
-int countNeighbors2(int row, int col) {
+int countNeighbors(int row, int col) {
 	//by storing pointers to the top and bottom rows and the left and right column positions up-front, this routine should be very efficient
-	bool* botRow = row == rowsPerRank-1 ? ghostBot : boardData[row+1];
-	bool* topRow = row == 0 ? ghostTop : boardData[row-1];
-	int leftCol = col == 0 ? boardSize-1 : col-1;
-	int rightCol = col == boardSize-1 ? 0 : col+1;
+	bool* botRow = (row == rowsPerRank-1) ? ghostBot : boardData[row+1];
+	bool* topRow = (row == 0) ? ghostTop : boardData[row-1];
+	int leftCol = (col == 0) ? boardSize-1 : col-1;
+	int rightCol = (col == boardSize-1) ? 0 : col+1;
 	//     topLeft         + topCenter   + topRight         + centerLeft              + centerRight              + bottomLeft      + bottomCenter+ bottomRight
 	return topRow[leftCol] + topRow[col] + topRow[rightCol] + boardData[row][leftCol] + boardData[row][rightCol] + botRow[leftCol] + botRow[col] + botRow[rightCol];
+}
+
+// Copies the current tick data into the cumulative heatmap.
+void updateHeatmap() { 
+	for (int i = 0; i < rowsPerRank; ++i){
+		for (int j = 0; j < boardSize; ++j){
+			heatmap[i][j] += boardData[i][j];
+		}
+	}
 }
 
 /**
  * display the board state for debugging purposes
  */
 void printBoard() {
-	for (int i = 0; i < 10000000*rank; rand(), ++i); //busyloop for output timing
 	for (int k = 0; k<rowsPerRank; ++k) {
 		for (int r = 0; r < boardSize; ++r) {
 		printf(boardData[k][r]?"x":"_");
@@ -87,6 +97,20 @@ void printBoard() {
 		printf("\n");
 	}
 	if (rank == numRanks-1) printf("\n");
+	fflush(stdout);
+}
+
+void printHeatmap(){
+	if(rank != 0) MPI_Recv(0, 0, 0, rank-1, HEATMAP_SYNC_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	
+	for (int k = 0; k<rowsPerRank; ++k) {
+		for (int r = 0; r < boardSize; ++r) {
+			printf("%d ", heatmap[k][r]);
+		}
+		printf("\n");
+	}
+
+	if(rank != numRanks-1) MPI_Send(0, 0, 0, rank+1, HEATMAP_SYNC_TAG, MPI_COMM_WORLD);
 	fflush(stdout);
 }
 
@@ -124,9 +148,9 @@ void *runSimulation(void* threadNum) {
 				// consult rng and count neighbors to determine cell state
 				double random = GenVal(k+globalIndex)*100;  // shift rng range from 0-1 to 0-100
 				// when we don't reach the random threshold, treat >= threshold/2 as false, and < threshold/2 as true
-				if (random < threshold) boardData[k][r] = random < (threshold>>2);
+				if (random < threshold) boardData[k][r] = ( random < (threshold>>2) );
 				else {
-					int neighbors = countNeighbors2(k,r);
+					int neighbors = countNeighbors(k,r);
 					boardData[k][r] = neighbors == 3 || (neighbors == 2 && boardData[k][r] == ALIVE);
 				}
 				//keep track of local live cells
@@ -139,8 +163,10 @@ void *runSimulation(void* threadNum) {
 		pthread_mutex_unlock(&counterMutex);
 		if (DEBUG && rank == 0 && threadId == 0) printf("%d\n",i);
 		if (BOARDTESTING && threadId == 0) printBoard();
+		updateHeatmap();
 
 	}
+	printHeatmap();
 	//all done with thread barriers
 	return NULL;
 }
@@ -183,6 +209,14 @@ int main(int argc, char *argv[]) {
     	boardData[i] = malloc(boardSize * sizeof(bool));
     	for (int r = 0; r < boardSize; boardData[i][r++] = ALIVE);
     }
+
+	// allocate local heatmap chunk and initialize everything to 0
+	heatmap = malloc(rowsPerRank * sizeof(int*));
+    for (int i = 0; i < rowsPerRank; ++i) {
+    	heatmap[i] = malloc(boardSize * sizeof(int));
+    	for (int r = 0; r < boardSize; boardData[i][r++] = 0);
+    }
+
     // init ghost rows
     if (numRanks == 1) {
     	//if we are performing a single rank run, the ghost rows just wrap around normally
@@ -231,6 +265,8 @@ int main(int argc, char *argv[]) {
     free(totalLiveCellCounts);
     for (int i = 0; i < rowsPerRank; free(boardData[i++]));
     free(boardData);
+	for (int i = 0; i < rowsPerRank; free(heatmap[i++]));
+    free(heatmap);
     if (numRanks > 1) {
     	free(ghostTop);
     	free(ghostBot);
