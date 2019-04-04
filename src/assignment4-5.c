@@ -19,10 +19,12 @@
 #define processor_frequency 1.0 // 1.0 for mastiff since Wtime measures seconds, not cycles
 #endif
 #define DEBUG false
-#define BOARDTESTING true
+#define BOARDTESTING false
 
 #define ALIVE 1
 #define DEAD  0
+
+#define HEATMAP_SYNC_TAG -1
 
 // MPI data
 int numRanks = -1; // total number of ranks in the current run
@@ -175,7 +177,7 @@ void *runSimulation(void* threadNum) {
 int main(int argc, char *argv[]) {
 	// usage check
 	if (argc != 4) {
-		fprintf(stderr,"Error: %d input argument[s] were supplied, but 3 were expected. Usage: mpirun -np X ./a.o numThreadsPerRank numTicks threshold\n",argc-1);
+		fprintf(stderr,"Error: %d input argument[s] were supplied, but 3 were expected. Usage: mpirun -np X %s numThreadsPerRank numTicks threshold\n",argc-1, argv[0]);
 		exit(1);
 	}
 	//grab run parameters from cmd args
