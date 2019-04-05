@@ -37,6 +37,7 @@ pthread_barrier_t threadBarrier;
 int numTicks = -1; // how many ticks of the simulation to perform; passed in as arg2
 bool** boardData;
 int** heatmap;
+int* heatmapAll;
 bool* ghostTop;
 bool* ghostBot;
 int rowsPerRank = -1; // how many rows each rank is responsible for
@@ -89,6 +90,24 @@ void updateHeatmap() {
 }
 
 /**
+ * Write the board state to a file
+ */
+void outputBoard() {
+	MPI_File boardFile;
+	MPI_File_open(MPI_COMM_WORLD, "final_board.out", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &boardFile);
+	char* writebuffer = malloc(sizeof(char) * (boardSize+1));
+	writebuffer[boardSize] = '\n';
+	for (int k = 0; k<rowsPerRank; ++k) {
+		for (int r = 0; r < boardSize; ++r) {
+			writebuffer[r] = boardData[k][r]?'x':'_';
+		}
+		MPI_File_write_at(boardFile, rank*boardSize*rowsPerRank, writebuffer, boardSize+1, MPI_CHAR, MPI_STATUS_IGNORE);
+	}
+	free(writebuffer);
+	MPI_File_close(&boardFile);
+}
+
+/**
  * display the board state for debugging purposes
  */
 void printBoard() {
@@ -102,15 +121,34 @@ void printBoard() {
 	fflush(stdout);
 }
 
-void printHeatmap(){
-	if(rank != 0) MPI_Recv(0, 0, 0, rank-1, HEATMAP_SYNC_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	
-	for (int k = 0; k<rowsPerRank; ++k) {
-		for (int r = 0; r < boardSize; ++r) {
-			printf("%d ", heatmap[k][r]);
-		}
-		printf("\n");
+void outputHeatmap(){
+	if(rank != 0){
+		MPI_Send(heatmapAll, boardSize*rowsPerRank, MPI_INT, 0, 0, MPI_COMM_WORLD);
+		return;
 	}
+
+	FILE* heatmapFile =	fopen("heatmap.out", "w");
+
+	for(int y = 0; y < rowsPerRank; ++y){
+		for(int x = 0; x < boardSize; ++x){
+			fprintf(heatmapFile, "%d ", heatmapAll[y*boardSize + x]);
+		}
+		fprintf(heatmapFile, "\n");
+	}
+
+	int* heatmapRecv = malloc(sizeof(int) * boardSize * rowsPerRank);
+	for (int i = 1; i<numRanks; ++i) {
+		MPI_Recv(heatmapRecv, boardSize*rowsPerRank, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+		for(int y = 0; y < rowsPerRank; ++y){
+			for(int x = 0; x < boardSize; ++x){
+				fprintf(heatmapFile, "%d ", heatmapRecv[y*boardSize + x]);
+			}
+			fprintf(heatmapFile, "\n");
+		}
+	}
+	free(heatmapRecv);
+	fclose(heatmapFile);
 
 	if(rank != numRanks-1) MPI_Send(0, 0, 0, rank+1, HEATMAP_SYNC_TAG, MPI_COMM_WORLD);
 	fflush(stdout);
@@ -168,7 +206,6 @@ void *runSimulation(void* threadNum) {
 		updateHeatmap();
 
 	}
-	printHeatmap();
 	//all done with thread barriers
 	return NULL;
 }
@@ -213,9 +250,11 @@ int main(int argc, char *argv[]) {
     }
 
 	// allocate local heatmap chunk and initialize everything to 0
+	// heatmap is allocated contiguously so it can be sent over mpi more easily at the end
 	heatmap = malloc(rowsPerRank * sizeof(int*));
+	heatmapAll = malloc(rowsPerRank * boardSize * sizeof(int*));
     for (int i = 0; i < rowsPerRank; ++i) {
-    	heatmap[i] = malloc(boardSize * sizeof(int));
+    	heatmap[i] = &(heatmapAll[boardSize * i]);
     	for (int r = 0; r < boardSize; boardData[i][r++] = 0);
     }
 
@@ -258,6 +297,10 @@ int main(int argc, char *argv[]) {
     if (DEBUG || rank == 0) printf("rank %d: Elapsed time = %fs\n",rank,time_in_secs);
     if (rank == 0) printf("rank %d: totalLiveCellCounts[0]=%d\n",rank, totalLiveCellCounts[0]);
 
+	// output data to files
+	outputBoard();
+	outputHeatmap();
+	
 	// END -Perform a barrier and then leave MPI
     MPI_Barrier( MPI_COMM_WORLD );
     MPI_Finalize();
