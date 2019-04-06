@@ -19,7 +19,7 @@
 #define processor_frequency 1.0 // 1.0 for mastiff since Wtime measures seconds, not cycles
 #endif
 #define DEBUG false
-#define BOARDTESTING true
+#define BOARDTESTING false
 
 #define ALIVE 1
 #define DEAD  0
