@@ -92,8 +92,11 @@ void updateHeatmap() {
  */
 void outputBoard() {
 	MPI_File boardFile;
+	printf("rank %d starting outputBoard\n", rank);
 	MPI_File_open(MPI_COMM_WORLD, "final_board.out", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &boardFile);
+	printf("rank %d opened file\n", rank);
 	char* writebuffer = malloc(sizeof(char) * (boardSize+1));
+	printf("rank %d allocated writebuffer\n", rank);
 	writebuffer[boardSize] = '\n';
 	for (int k = 0; k<rowsPerRank; ++k) {
 		for (int r = 0; r < boardSize; ++r) {
@@ -101,8 +104,11 @@ void outputBoard() {
 		}
 		MPI_File_write_at(boardFile, rank*boardSize*rowsPerRank, writebuffer, boardSize+1, MPI_CHAR, MPI_STATUS_IGNORE);
 	}
+	printf("rank %d finished writing\n", rank);
 	free(writebuffer);
+	printf("rank %d freed buffer\n", rank);
 	MPI_File_close(&boardFile);
+	printf("rank %d closed board file\n", rank);
 }
 
 /**
@@ -120,35 +126,42 @@ void printBoard() {
 }
 
 void outputHeatmap(){
+	printf("rank %d starting outputHeatmap\n", rank);
 	if(rank != 0){
+		printf("rank %d sending...\n", rank);
 		MPI_Send(heatmapAll, boardSize*rowsPerRank, MPI_INT, 0, 0, MPI_COMM_WORLD);
+		printf("rank %d sent\n", rank);
 		return;
 	}
 
 	FILE* heatmapFile =	fopen("heatmap.out", "w");
+	printf("opened heatmap file\n");
 
 	for(int y = 0; y < rowsPerRank; ++y){
 		for(int x = 0; x < boardSize; ++x){
 			fprintf(heatmapFile, "%d ", heatmapAll[y*boardSize + x]);
+			printf("%d ", heatmapAll[y*boardSize + x]);
 		}
 		fprintf(heatmapFile, "\n");
+		printf("\n");
 	}
 
 	int* heatmapRecv = malloc(sizeof(int) * boardSize * rowsPerRank);
 	for (int i = 1; i<numRanks; ++i) {
+		printf("receiving from rank %d...\n", i);
 		MPI_Recv(heatmapRecv, boardSize*rowsPerRank, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
+		printf("received from rank %d\n", i);
 		for(int y = 0; y < rowsPerRank; ++y){
 			for(int x = 0; x < boardSize; ++x){
 				fprintf(heatmapFile, "%d ", heatmapRecv[y*boardSize + x]);
 			}
 			fprintf(heatmapFile, "\n");
 		}
+		printf("printed data from rank %d\n", i);
 	}
 	free(heatmapRecv);
 	fclose(heatmapFile);
 
-	if(rank != numRanks-1) MPI_Send(heatmapAll, boardSize*rowsPerRank, MPI_INT, 0, 0, MPI_COMM_WORLD);
 	fflush(stdout);
 }
 
@@ -159,6 +172,7 @@ void outputHeatmap(){
 
 void *runSimulation(void* threadNum) {
 	int threadId = *((int*)threadNum);
+	printf("rank %d thread %d starting\n", rank, threadId);
 	MPI_Request sReqTop, sReqBot, rReqTop, rReqBot;
 	MPI_Status status;
 	if (BOARDTESTING && threadId == 0) printBoard();
@@ -204,6 +218,7 @@ void *runSimulation(void* threadNum) {
 		updateHeatmap();
 
 	}
+	printf("rank %d thread %d finished\n", rank, threadId);
 	//all done with thread barriers
 	return NULL;
 }
@@ -253,7 +268,7 @@ int main(int argc, char *argv[]) {
 	heatmapAll = malloc(rowsPerRank * boardSize * sizeof(int*));
     for (int i = 0; i < rowsPerRank; ++i) {
     	heatmap[i] = &(heatmapAll[boardSize * i]);
-    	for (int r = 0; r < boardSize; boardData[i][r++] = 0);
+    	for (int r = 0; r < boardSize; heatmap[i][r++] = 0);
     }
 
     // init ghost rows
@@ -282,13 +297,17 @@ int main(int argc, char *argv[]) {
     // run the simulation on the root process as well, who gets treated as pthread #0
     threadIds[0] = 0;
     runSimulation(&threadIds[0]);
+
     // cleanup pthreads and thread barrier
     for (int i = 1; i < numThreads; pthread_join(threads[i++], NULL));
+	printf("rank %d joined threads\n", rank);
     pthread_barrier_destroy(&threadBarrier);
+	printf("rank %d destroyed barrier\n", rank);
     // sum the live cell counts across all ranks
     if (numRanks > 1) {
     	MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
     }
+	printf("rank %d finished sync\n", rank);
 
     // timing and analysis
     double time_in_secs = (GetTimeBase() - g_start_cycles) / processor_frequency;
