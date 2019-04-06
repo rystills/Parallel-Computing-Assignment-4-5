@@ -19,7 +19,7 @@
 #define processor_frequency 1.0 // 1.0 for mastiff since Wtime measures seconds, not cycles
 #endif
 #define DEBUG false
-#define BOARDTESTING false
+#define BOARDTESTING true
 
 #define ALIVE 1
 #define DEAD  0
@@ -253,7 +253,7 @@ int main(int argc, char *argv[]) {
 	heatmapAll = malloc(rowsPerRank * boardSize * sizeof(int*));
     for (int i = 0; i < rowsPerRank; ++i) {
     	heatmap[i] = &(heatmapAll[boardSize * i]);
-    	for (int r = 0; r < boardSize; boardData[i][r++] = 0);
+    	for (int r = 0; r < boardSize; heatmap[i][r++] = 0);
     }
 
     // init ghost rows
@@ -288,6 +288,10 @@ int main(int argc, char *argv[]) {
     // sum the live cell counts across all ranks
     if (numRanks > 1) {
     	MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    }
+    else {
+    	//copy over the local live cell counts if we're in a single rank run
+    	for (int i = 0; i < numTicks; totalLiveCellCounts[i] = liveCellCounts[i],++i);
     }
 
     // timing and analysis
