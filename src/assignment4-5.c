@@ -300,12 +300,16 @@ int main(int argc, char *argv[]) {
 
     // cleanup pthreads and thread barrier
     for (int i = 1; i < numThreads; pthread_join(threads[i++], NULL));
+
 	printf("rank %d joined threads\n", rank);
     pthread_barrier_destroy(&threadBarrier);
 	printf("rank %d destroyed barrier\n", rank);
     // sum the live cell counts across all ranks
     if (numRanks > 1) {
     	MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    } else {
+    	//copy over the local live cell counts if we're in a single rank run
+    	for (int i = 0; i < numTicks; totalLiveCellCounts[i] = liveCellCounts[i],++i);
     }
 	printf("rank %d finished sync\n", rank);
 
