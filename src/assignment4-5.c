@@ -24,8 +24,6 @@
 #define ALIVE 1
 #define DEAD  0
 
-#define HEATMAP_SYNC_TAG -1
-
 // MPI data
 int numRanks = -1; // total number of ranks in the current run
 int rank = -1; // our rank
@@ -150,7 +148,7 @@ void outputHeatmap(){
 	free(heatmapRecv);
 	fclose(heatmapFile);
 
-	if(rank != numRanks-1) MPI_Send(heatmapAll, boardSize*rowsPerRank, MPI_INT, 0, HEATMAP_SYNC_TAG, MPI_COMM_WORLD);
+	if(rank != numRanks-1) MPI_Send(heatmapAll, boardSize*rowsPerRank, MPI_INT, 0, 0, MPI_COMM_WORLD);
 	fflush(stdout);
 }
 
