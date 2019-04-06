@@ -150,7 +150,7 @@ void outputHeatmap(){
 	free(heatmapRecv);
 	fclose(heatmapFile);
 
-	if(rank != numRanks-1) MPI_Send(0, 0, 0, rank+1, HEATMAP_SYNC_TAG, MPI_COMM_WORLD);
+	if(rank != numRanks-1) MPI_Send(heatmapAll, boardSize*rowsPerRank, MPI_INT, 0, HEATMAP_SYNC_TAG, MPI_COMM_WORLD);
 	fflush(stdout);
 }
 
@@ -310,8 +310,8 @@ int main(int argc, char *argv[]) {
     free(totalLiveCellCounts);
     for (int i = 0; i < rowsPerRank; free(boardData[i++]));
     free(boardData);
-	for (int i = 0; i < rowsPerRank; free(heatmap[i++]));
     free(heatmap);
+    free(heatmapAll);
     if (numRanks > 1) {
     	free(ghostTop);
     	free(ghostBot);
