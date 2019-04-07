@@ -94,7 +94,7 @@ void outputBoard() {
 		for (int r = 0; r < boardSize; ++r) {
 			writebuffer[r] = boardData[k][r]?'x':'_';
 		}
-		MPI_File_write_at(boardFile, rank*boardSize*rowsPerRank, writebuffer, boardSize+1, MPI_CHAR, MPI_STATUS_IGNORE);
+		MPI_File_write_at(boardFile, (rank*rowsPerRank+k)*(boardSize+1), writebuffer, boardSize+1, MPI_CHAR, MPI_STATUS_IGNORE);
 	}
 	printf("rank %d finished writing\n", rank);
 	free(writebuffer);
