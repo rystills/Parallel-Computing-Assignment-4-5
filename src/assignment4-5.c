@@ -197,7 +197,7 @@ void *runSimulation(void* threadNum) {
 				// consult rng and count neighbors to determine cell state
 				double random = GenVal(k+globalIndex)*100;  // shift rng range from 0-1 to 0-100
 				// when we don't reach the random threshold, treat >= threshold/2 as false, and < threshold/2 as true
-				if (random < threshold) boardData[k][r] = ( random < (threshold>>2) );
+				if (random < threshold) boardData[k][r] = ( random < (threshold>>1) );
 				else {
 					int neighbors = countNeighbors(k,r);
 					boardData[k][r] = neighbors == 3 || (neighbors == 2 && boardData[k][r] == ALIVE);
@@ -210,7 +210,7 @@ void *runSimulation(void* threadNum) {
 		while (pthread_mutex_trylock(&counterMutex) != 0);
 		liveCellCounts[i]+=localLiveCells;
 		pthread_mutex_unlock(&counterMutex);
-		if (DEBUG && rank == 0 && threadId == 0) printf("%d\n",i);
+		if (rank == 0 && threadId == 0) printf("%d\n",i);
 		if (BOARDTESTING && threadId == 0) printBoard();
 		if (OUTPUTHEATMAP) updateHeatmap();
 
