@@ -26,7 +26,7 @@
 
 // output parameters (for performance testing)
 #define OUTPUTHEATMAP false
-#define OUTPUTBOARD false
+#define OUTPUTBOARD true
 
 // MPI data
 int numRanks = -1; // total number of ranks in the current run
@@ -324,7 +324,12 @@ int main(int argc, char *argv[]) {
     }
 
 	// output data to files
-	if (OUTPUTBOARD) outputBoard();
+	if (OUTPUTBOARD) {
+		g_start_cycles = GetTimeBase();
+		outputBoard();
+		time_in_secs = (GetTimeBase() - g_start_cycles) / processor_frequency;
+		if (DEBUG || rank == 0) printf("rank %d: Board Write Elapsed time = %fs\n",rank,time_in_secs);
+	}
 	if (OUTPUTHEATMAP) outputHeatmap();
 	
 	// END -Perform a barrier and then leave MPI
