@@ -24,6 +24,10 @@
 #define ALIVE 1
 #define DEAD  0
 
+// output parameters (for performance testing)
+#define OUTPUTHEATMAP true
+#define OUTPUTBOARD true
+
 // MPI data
 int numRanks = -1; // total number of ranks in the current run
 int rank = -1; // our rank
@@ -44,23 +48,9 @@ int globalIndex; // this row's global index
 // timing/stats
 double g_time_in_secs = 0;
 unsigned long long g_start_cycles=0;
-unsigned int* liveCellCounts; //array of ints corresponding to the # of live cells at the end of each simulation tick
-unsigned int* totalLiveCellCounts; //live cell counts across all ranks combined
+unsigned int* liveCellCounts; // array of ints corresponding to the # of live cells at the end of each simulation tick
+unsigned int* totalLiveCellCounts; // live cell counts across all ranks combined
 pthread_mutex_t counterMutex = PTHREAD_MUTEX_INITIALIZER; // lock used to ensure safe thread counting
-
-/*
-int countNeighbors(int x, int y){
-	int n = 0;
-	for(int i=-1; i<=1; ++i){
-		for(int j=-1; j<=1; ++j){
-			// Count the cells in the 3x3 area centered on (x,y) that are alive, but skip (x,y). If y would be out of bounds, use the ghost rows.
-			// To prevent x from going out of bounds, make it wrap around, so that -1 becomes boardSize - 1.
-			if(i!=0 || j!=0) n += ( ( (y+j==-1) ? ghostBot : ((y+j==rowsPerRank) ? ghostTop : boardData[y+j]) )[(boardSize+x+i)%boardSize] == ALIVE );
-		}
-	}
-	return n;
-}
-*/
 
 /**
  * return the number of live neighbors of the cell at the specified row/col, wrapping around at the edges of the board
@@ -69,7 +59,7 @@ int countNeighbors(int x, int y){
  * @return: the live neighbor count at the specified cell
  */
 int countNeighbors(int row, int col) {
-	//by storing pointers to the top and bottom rows and the left and right column positions up-front, this routine should be very efficient
+	// by storing pointers to the top and bottom rows and the left and right column positions up-front, this routine should be very efficient
 	bool* botRow = (row == rowsPerRank-1) ? ghostBot : boardData[row+1];
 	bool* topRow = (row == 0) ? ghostTop : boardData[row-1];
 	int leftCol = (col == 0) ? boardSize-1 : col-1;
@@ -78,7 +68,9 @@ int countNeighbors(int row, int col) {
 	return topRow[leftCol] + topRow[col] + topRow[rightCol] + boardData[row][leftCol] + boardData[row][rightCol] + botRow[leftCol] + botRow[col] + botRow[rightCol];
 }
 
-// Copies the current tick data into the cumulative heatmap.
+/**
+ * Copies the current tick data into the cumulative heatmap
+ */
 void updateHeatmap() { 
 	for (int i = 0; i < rowsPerRank; ++i){
 		for (int j = 0; j < boardSize; ++j){
@@ -125,7 +117,11 @@ void printBoard() {
 	fflush(stdout);
 }
 
+/**
+ * write the heatmap to a file, ensuring order by sharing heatmap chunks over MPI
+ */
 void outputHeatmap(){
+	// non-0 ranks simply share their heatmap chunk with rank 0
 	printf("rank %d starting outputHeatmap\n", rank);
 	if(rank != 0){
 		printf("rank %d sending...\n", rank);
@@ -134,9 +130,9 @@ void outputHeatmap(){
 		return;
 	}
 
+	// rank 0 writes his chunk to the heatmap output file
 	FILE* heatmapFile =	fopen("heatmap.out", "w");
 	printf("opened heatmap file\n");
-
 	for(int y = 0; y < rowsPerRank; ++y){
 		for(int x = 0; x < boardSize; ++x){
 			fprintf(heatmapFile, "%d ", heatmapAll[y*boardSize + x]);
@@ -146,6 +142,7 @@ void outputHeatmap(){
 		printf("\n");
 	}
 
+	// finally, rank 0 receives heatmap chunks from the remaining ranks in order, and outputs those chunks to the heatmap output file
 	int* heatmapRecv = malloc(sizeof(int) * boardSize * rowsPerRank);
 	for (int i = 1; i<numRanks; ++i) {
 		printf("receiving from rank %d...\n", i);
@@ -177,21 +174,21 @@ void *runSimulation(void* threadNum) {
 	MPI_Status status;
 	if (BOARDTESTING && threadId == 0) printBoard();
 	for (int i = 0; i < numTicks; ++i) {
-		//exchange row data with top and bottom neighbors
+		// exchange row data with top and bottom neighbors
 		if (numRanks > 1 && threadId == 0) {
-			//send top
+			// send top
 			MPI_Isend(boardData[rowsPerRank-1], boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &sReqTop);
-			//send bottom
+			// send bottom
 			MPI_Isend(boardData[0], boardSize, MPI_C_BOOL, rank==0?numRanks-1:rank-1, 0, MPI_COMM_WORLD, &sReqBot);
-			//receive top
+			// receive top
 			MPI_Irecv(ghostBot, boardSize, MPI_C_BOOL, rank==numRanks-1?0:rank+1, 0, MPI_COMM_WORLD, &rReqTop);
-			//receive bottom
+			// receive bottom
 			MPI_Irecv(ghostTop, boardSize, MPI_C_BOOL, rank==0?numRanks-1:rank-1, 0, MPI_COMM_WORLD, &rReqBot);
-			//make sure we've received the ghost data before proceeding
+			// make sure we've received the ghost data before proceeding
 			MPI_Wait(&rReqTop, &status);
 			MPI_Wait(&rReqBot, &status);
 		}
-		//sync threads on the current tick after we've received ghost rows
+		// sync threads on the current tick after we've received ghost rows
 		pthread_barrier_wait(&threadBarrier);
 		// update grid
 		unsigned int localLiveCells = 0;
@@ -205,7 +202,7 @@ void *runSimulation(void* threadNum) {
 					int neighbors = countNeighbors(k,r);
 					boardData[k][r] = neighbors == 3 || (neighbors == 2 && boardData[k][r] == ALIVE);
 				}
-				//keep track of local live cells
+				// keep track of local live cells
 				localLiveCells += boardData[k][r];
 			}
 		}
@@ -215,14 +212,13 @@ void *runSimulation(void* threadNum) {
 		pthread_mutex_unlock(&counterMutex);
 		if (DEBUG && rank == 0 && threadId == 0) printf("%d\n",i);
 		if (BOARDTESTING && threadId == 0) printBoard();
-		updateHeatmap();
+		if (OUTPUTHEATMAP) updateHeatmap();
 
 	}
 	printf("rank %d thread %d finished\n", rank, threadId);
-	//all done with thread barriers
+	// all done with thread barriers
 	return NULL;
 }
-
 
 int main(int argc, char *argv[]) {
 	// usage check
@@ -230,12 +226,12 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr,"Error: %d input argument[s] were supplied, but 3 were expected. Usage: mpirun -np X %s numThreadsPerRank numTicks threshold\n",argc-1, argv[0]);
 		exit(1);
 	}
-	//grab run parameters from cmd args
+	// grab run parameters from cmd args
 	numThreads = atoi(argv[1]);
 	numTicks = atoi(argv[2]);
 	threshold = atof(argv[3]);
 
-	//use a pthread barrier to ensure threads don't tick on stale data
+	// use a pthread barrier to ensure threads don't tick on stale data
 	pthread_barrier_init(&threadBarrier, NULL, numThreads);
 
 	// init MPI + get size & rank, then calculate board data
@@ -264,22 +260,25 @@ int main(int argc, char *argv[]) {
 
 	// allocate local heatmap chunk and initialize everything to 0
 	// heatmap is allocated contiguously so it can be sent over mpi more easily at the end
-	heatmap = malloc(rowsPerRank * sizeof(int*));
-	heatmapAll = malloc(rowsPerRank * boardSize * sizeof(int*));
-    for (int i = 0; i < rowsPerRank; ++i) {
-    	heatmap[i] = &(heatmapAll[boardSize * i]);
-    	for (int r = 0; r < boardSize; heatmap[i][r++] = 0);
-    }
+	if (OUTPUTHEATMAP) {
+		heatmap = malloc(rowsPerRank * sizeof(int*));
+		heatmapAll = malloc(rowsPerRank * boardSize * sizeof(int*));
+		for (int i = 0; i < rowsPerRank; ++i) {
+			heatmap[i] = &(heatmapAll[boardSize * i]);
+			for (int r = 0; r < boardSize; heatmap[i][r++] = 0);
+		}
+	}
 
     // init ghost rows
     if (numRanks == 1) {
-    	//if we are performing a single rank run, the ghost rows just wrap around normally
+    	// if we are performing a single rank run, the ghost rows just wrap around normally
     	ghostBot = boardData[0];
     	ghostTop = boardData[rowsPerRank-1];
     }
     else {
-    	ghostTop = malloc(rowsPerRank * sizeof(bool*));
-    	ghostBot = malloc(rowsPerRank * sizeof(bool*));
+    	// if we are performing a multi-rank run, we need proper ghost rows of size boardSize
+    	ghostTop = malloc(boardSize * sizeof(bool));
+    	ghostBot = malloc(boardSize * sizeof(bool));
 		for (int i = 0; i < boardSize; ++i) {
 			ghostTop[i] = ALIVE;
 			ghostBot[i] = ALIVE;
@@ -308,7 +307,7 @@ int main(int argc, char *argv[]) {
     if (numRanks > 1) {
     	MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
     } else {
-    	//copy over the local live cell counts if we're in a single rank run
+    	// copy over the local live cell counts if we're in a single rank run
     	for (int i = 0; i < numTicks; totalLiveCellCounts[i] = liveCellCounts[i],++i);
     }
 	printf("rank %d finished sync\n", rank);
@@ -319,8 +318,8 @@ int main(int argc, char *argv[]) {
     if (rank == 0) printf("rank %d: totalLiveCellCounts[0]=%d\n",rank, totalLiveCellCounts[0]);
 
 	// output data to files
-	outputBoard();
-	outputHeatmap();
+	if (OUTPUTBOARD) outputBoard();
+	if (OUTPUTHEATMAP) outputHeatmap();
 	
 	// END -Perform a barrier and then leave MPI
     MPI_Barrier( MPI_COMM_WORLD );
@@ -331,12 +330,15 @@ int main(int argc, char *argv[]) {
     free(totalLiveCellCounts);
     for (int i = 0; i < rowsPerRank; free(boardData[i++]));
     free(boardData);
-    free(heatmap);
-    free(heatmapAll);
+    // nothing to free if we're not using a heatmap for the current simulation
+    if (OUTPUTHEATMAP) {
+		free(heatmap);
+		free(heatmapAll);
+    }
+    // nothing to free if we're only using a single rank for the current simulation
     if (numRanks > 1) {
     	free(ghostTop);
     	free(ghostBot);
     }
-
     return 0;
 }
