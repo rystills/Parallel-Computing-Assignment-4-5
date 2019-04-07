@@ -25,15 +25,15 @@
 #define DEAD  0
 
 // output parameters (for performance testing)
-#define OUTPUTHEATMAP true
-#define OUTPUTBOARD true
+#define OUTPUTHEATMAP false
+#define OUTPUTBOARD false
 
 // MPI data
 int numRanks = -1; // total number of ranks in the current run
 int rank = -1; // our rank
 // game/board info
 int threshold; // probability that cells will randomize
-#define boardSize 32 // total # of rows on a square grid
+#define boardSize 32768 // total # of rows on a square grid
 int numThreads = -1; // total number of threads at each rank (including the rank itself, meaning we spawn numThreads-1 pthreads); passed in as arg1
 pthread_barrier_t threadBarrier;
 int numTicks = -1; // how many ticks of the simulation to perform; passed in as arg2
@@ -305,7 +305,7 @@ int main(int argc, char *argv[]) {
 	printf("rank %d destroyed barrier\n", rank);
     // sum the live cell counts across all ranks
     if (numRanks > 1) {
-    	MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    	MPI_Reduce(liveCellCounts, totalLiveCellCounts, numTicks, MPI_UNSIGNED, MPI_SUM, 0, MPI_COMM_WORLD);
     } else {
     	// copy over the local live cell counts if we're in a single rank run
     	for (int i = 0; i < numTicks; totalLiveCellCounts[i] = liveCellCounts[i],++i);
