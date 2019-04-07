@@ -315,7 +315,13 @@ int main(int argc, char *argv[]) {
     // timing and analysis
     double time_in_secs = (GetTimeBase() - g_start_cycles) / processor_frequency;
     if (DEBUG || rank == 0) printf("rank %d: Elapsed time = %fs\n",rank,time_in_secs);
-    if (rank == 0) printf("rank %d: totalLiveCellCounts[0]=%d\n",rank, totalLiveCellCounts[0]);
+    if (rank == 0) {
+    	printf("liveCellCounts =");
+    	for (int i = 0; i < numTicks; ++i) {
+    		printf(" %d:%d",i, totalLiveCellCounts[i]);
+    	}
+    	printf("\n");
+    }
 
 	// output data to files
 	if (OUTPUTBOARD) outputBoard();
