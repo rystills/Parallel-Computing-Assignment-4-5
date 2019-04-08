@@ -74,7 +74,8 @@ int countNeighbors(int row, int col) {
 void updateHeatmap() { 
 	for (int i = 0; i < rowsPerRank; ++i){
 		for (int j = 0; j < boardSize; ++j){
-			heatmap[i][j] += boardData[i][j];
+			heatmap[i][j] += boardData[i][j];  // use me for heatmap across all ticks
+			//heatmap[i][j] = boardData[i][j];  // use me for heatmap only at final state
 		}
 	}
 }
