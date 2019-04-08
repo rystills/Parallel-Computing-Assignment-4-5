@@ -131,7 +131,7 @@ void outputHeatmap(){
 	}
 
 	// rank 0 writes his chunk to the heatmap output file
-	FILE* heatmapFile =	fopen("heatmap.out", "w");
+	FILE* heatmapFile =	fopen(threshold == 0 ? "hm0.out" : (threshold == 25 ? "hm25.out" : (threshold == 50 ? "hm50.out" : "hm75.out")), "w");
 	printf("opened heatmap file\n");
 	for(int y = 0; y < rowsPerRank; y+=32){
 		for(int x = 0; x < boardSize; x+=32){
@@ -159,7 +159,7 @@ void outputHeatmap(){
 				int groupSum = 0;
 				for (int y2 = y; y2 < y+32; ++y2) {
 					for (int x2 = x; x2 < x+32; ++x2) {
-						groupSum += heatmapAll[y2*boardSize+x2];
+						groupSum += heatmapRecv[y2*boardSize+x2];
 					}
 				}
 				fprintf(heatmapFile, "%d ", groupSum);
