@@ -25,8 +25,8 @@
 #define DEAD  0
 
 // output parameters (for performance testing)
-#define OUTPUTHEATMAP false
-#define OUTPUTBOARD true
+#define OUTPUTHEATMAP true
+#define OUTPUTBOARD false
 
 // MPI data
 int numRanks = -1; // total number of ranks in the current run
@@ -133,13 +133,19 @@ void outputHeatmap(){
 	// rank 0 writes his chunk to the heatmap output file
 	FILE* heatmapFile =	fopen("heatmap.out", "w");
 	printf("opened heatmap file\n");
-	for(int y = 0; y < rowsPerRank; ++y){
-		for(int x = 0; x < boardSize; ++x){
-			fprintf(heatmapFile, "%d ", heatmapAll[y*boardSize + x]);
-			printf("%d ", heatmapAll[y*boardSize + x]);
+	for(int y = 0; y < rowsPerRank; y+=32){
+		for(int x = 0; x < boardSize; x+=32){
+			int groupSum = 0;
+			for (int y2 = y; y2 < y+32; ++y2) {
+				for (int x2 = x; x2 < x+32; ++x2) {
+					groupSum += heatmapAll[y2*boardSize+x2];
+				}
+			}
+			fprintf(heatmapFile, "%d ", groupSum);
+			if (DEBUG) printf("%d ", groupSum);
 		}
 		fprintf(heatmapFile, "\n");
-		printf("\n");
+		if (DEBUG) printf("\n");
 	}
 
 	// finally, rank 0 receives heatmap chunks from the remaining ranks in order, and outputs those chunks to the heatmap output file
@@ -148,9 +154,15 @@ void outputHeatmap(){
 		printf("receiving from rank %d...\n", i);
 		MPI_Recv(heatmapRecv, boardSize*rowsPerRank, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		printf("received from rank %d\n", i);
-		for(int y = 0; y < rowsPerRank; ++y){
-			for(int x = 0; x < boardSize; ++x){
-				fprintf(heatmapFile, "%d ", heatmapRecv[y*boardSize + x]);
+		for(int y = 0; y < rowsPerRank; y+=32){
+			for(int x = 0; x < boardSize; x+=32){
+				int groupSum = 0;
+				for (int y2 = y; y2 < y+32; ++y2) {
+					for (int x2 = x; x2 < x+32; ++x2) {
+						groupSum += heatmapAll[y2*boardSize+x2];
+					}
+				}
+				fprintf(heatmapFile, "%d ", groupSum);
 			}
 			fprintf(heatmapFile, "\n");
 		}
