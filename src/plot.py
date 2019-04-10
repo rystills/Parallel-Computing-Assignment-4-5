@@ -9,7 +9,7 @@ for fn in hmNames:
     infile = open("{0}/{1}".format(heatmapDir,fn))
     data = [ [int(i) for i in line.strip().split(" ")] for line in infile]
     infile.close()
-    heatmap = plt.pcolormesh(data)
+    heatmap = plt.pcolormesh(data,vmin=0, vmax = 540)
     cb = plt.colorbar(heatmap)
     plt.title(fn[2]+(fn[3] if fn[3].isdigit() else "")+"% Threshold for 128 Tick / 128 Node Run")
     cb.set_label('Number of Live Cells', rotation=90)
